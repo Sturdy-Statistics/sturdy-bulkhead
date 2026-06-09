@@ -1,0 +1,6 @@
+.cpcache
+.nrepl-port
+
+clj-watson.properties
+*.md
+target
