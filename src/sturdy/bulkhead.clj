@@ -11,7 +11,7 @@
             (let [{:keys [thunk promise-chan]} job
                   result (try
                            {:result (thunk)}
-                           (catch Exception e
+                           (catch Throwable e
                              {:error e}))]
               (a/>!! promise-chan result)
               (swap! pool-stats update :processed inc))

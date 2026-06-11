@@ -55,3 +55,15 @@
         wrapped (bulkhead/wrap-compute-bound handler pool)]
     (is (thrown-with-msg? Exception #"Boom" (wrapped {:request-method :get})))
     (bulkhead/stop-pool! pool)))
+
+(deftest errors-thrown-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        handler (fn [_req] (throw (AssertionError. "Severe Error")))
+        wrapped (bulkhead/wrap-compute-bound handler pool)]
+    (is (thrown-with-msg? AssertionError #"Severe Error" (wrapped {:request-method :get})))
+    ;; Check that the pool is still alive and can process a request
+    (let [handler-2 (fn [_req] {:status 200 :body "OK"})
+          wrapped-2 (bulkhead/wrap-compute-bound handler-2 pool)]
+      (is (= {:status 200 :body "OK"} (wrapped-2 {:request-method :get}))))
+    (bulkhead/stop-pool! pool)))
+
