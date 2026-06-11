@@ -1,5 +1,7 @@
 # sturdy-bulkhead
 
+[![Clojars Project](https://img.shields.io/clojars/v/com.sturdystats/sturdy-bulkhead.svg)](https://clojars.org/com.sturdystats/sturdy-bulkhead)
+
 `sturdy-bulkhead` implements middleware to queue compute-intensive requests (such as DuckDB queries) within a Ring API.
 It prevents CPU starvation by offloading work to dedicated worker pools using `core.async`.
 
@@ -11,6 +13,14 @@ It prevents CPU starvation by offloading work to dedicated worker pools using `c
 - **Timeouts**: Configurable timeouts to send a 504 Gateway Timeout.
 - **Multiple Pools**: Create multiple pools to bound different resources independently within the same application.
 - **Observability**: Tracks basic statistics like processed tasks, rejections, and timeouts.
+
+## Installation
+
+Add to `deps.edn`:
+
+```clojure
+{:deps com.sturdystats/sturdy-bulkhead {:mvn/version "VERSION"}}
+```
 
 ## Usage
 
