@@ -3,4 +3,6 @@
 
 clj-watson.properties
 *.md
+
 target
+*.pom.asc
