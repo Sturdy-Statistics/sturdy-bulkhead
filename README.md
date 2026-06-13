@@ -2,7 +2,7 @@
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.sturdystats/sturdy-bulkhead.svg)](https://clojars.org/com.sturdystats/sturdy-bulkhead)
 
-`sturdy-bulkhead` implements middleware to queue compute-intensive requests (such as DuckDB queries) within a Ring API.
+`sturdy-bulkhead` implements middleware to queue compute-intensive requests within a Ring API.
 It prevents CPU starvation by offloading work to dedicated worker pools using `core.async`.
 
 ## Features
@@ -71,6 +71,17 @@ When shutting down your application, clean up the resources:
 ```clojure
 (bulkhead/stop-pool! my-pool)
 ```
+
+## Tuning & Production Considerations
+
+It is critical to tune the worker pool relative to your web server's thread pool:
+The sum of your `num-workers` and `queue-size` should be strictly less than your web server's maximum thread pool size.
+
+Because `wrap-compute-bound` is synchronous middleware, it blocks the incoming Jetty request thread while waiting for the bulkhead worker to finish (or for the timeout to occur). 
+
+- **Worker Count (`num-workers`)**: This should be less than your total CPU cores.  This ensures the OS and web server always have dedicated resources to process network I/O, health checks, and fast endpoints without CPU starvation.
+- **Queue Size (`queue-size`)**: Determine how many requests you are willing to hold in memory during a traffic burst.  If the queue is full, the middleware immediately returns a `503 Service Unavailable`, freeing the jetty thread.
+- **Jetty Max Threads**: Ring-Jetty defaults to a maximum of 200 threads.  If you set `num-workers = 30` and `queue-size = 250`, all of jetty's threads could be sleeping on responses from bulkhead.  This would render the server unresponsive until the queue drains.
 
 ## Development & Testing
 
