@@ -81,10 +81,11 @@
    (let [job-chan (:job-chan pool)
          stats (:stats pool)]
      (fn [request]
-       (let [promise-chan (a/chan 1)
+       (let [promise-chan (a/promise-chan)
              thunk #(handler request)]
          (if (a/offer! job-chan {:thunk thunk :promise-chan promise-chan})
            (let [[val port] (a/alts!! [promise-chan (a/timeout timeout-ms)])]
+             (a/close! promise-chan)
              (if (= port promise-chan)
                (if (contains? val :error)
                  (throw (:error val))
