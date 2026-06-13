@@ -67,3 +67,30 @@
       (is (= {:status 200 :body "OK"} (wrapped-2 {:request-method :get}))))
     (bulkhead/stop-pool! pool)))
 
+(deftest phantom-pop-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 10})
+        p (promise)
+        ;; First handler blocks until promise is delivered
+        handler (fn [_req] @p {:status 200})
+        wrapped (bulkhead/wrap-compute-bound handler pool {:timeout-ms 10})
+
+        ;; Tie up the single worker
+        f1 (future (wrapped {:request-id "1"}))
+        _ (Thread/sleep 50)
+
+        ;; Second request queues up, but will timeout after 10ms
+        res2 (wrapped {:request-id "2"})]
+
+    ;; Client received timeout
+    (is (= 504 (:status res2)))
+
+    ;; Unblock the worker
+    (deliver p true)
+    @f1
+
+    ;; Let the worker dequeue the second request and "phantom pop" it
+    (Thread/sleep 50)
+
+    (is (= 1 (:phantom-pops @(:stats pool))))
+    (is (= 1 (:processed @(:stats pool))))
+    (bulkhead/stop-pool! pool)))

@@ -9,12 +9,23 @@
         (when (= port job-chan)
           (when job
             (let [{:keys [thunk promise-chan]} job
-                  result (try
-                           {:result (thunk)}
-                           (catch Throwable e
-                             {:error e}))]
-              (a/>!! promise-chan result)
-              (swap! pool-stats update :processed inc))
+                  ;; non-blocking read from promise-chan
+                  ;; - channel closed: receive nil from promise-chan
+                  ;; - channel open but empty: receive :continue as default
+                  ;; (channel should never be non-empty here)
+                  [_ p] (a/alts!! [promise-chan] :default :continue)]
+              (if (= p promise-chan)
+                ;; channel closed -> skip job
+                (swap! pool-stats update :phantom-pops inc)
+                ;; channel open -> run job
+                (let [result (try
+                               {:result (thunk)}
+                               (catch Throwable e
+                                 {:error e}))]
+                  ;; job complete -> send result
+                  ;; NB if channel closed while running, put simply drops the value
+                  (a/>!! promise-chan result)
+                  (swap! pool-stats update :processed inc))))
             (recur)))))))
 
 (defn start-pool!
@@ -33,7 +44,8 @@
          stop-chan (a/chan)
          stats (atom {:processed 0
                       :rejections 0
-                      :timeouts 0})
+                      :timeouts 0
+                      :phantom-pops 0})
          workers (doall
                   (for [_ (range num-workers)]
                     (worker-loop job-chan stats stop-chan)))]
@@ -84,7 +96,11 @@
        (let [promise-chan (a/promise-chan)
              thunk #(handler request)]
          (if (a/offer! job-chan {:thunk thunk :promise-chan promise-chan})
+           ;; sleep on either result or timeout
            (let [[val port] (a/alts!! [promise-chan (a/timeout timeout-ms)])]
+             ;; close the channel
+             ;; - if timeout and worker hasn't started, signals to skip this task
+             ;; - if timeout and worker has started, signals to drop the result
              (a/close! promise-chan)
              (if (= port promise-chan)
                (if (contains? val :error)
