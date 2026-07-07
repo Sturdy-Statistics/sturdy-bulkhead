@@ -31,8 +31,9 @@
 (defn start-pool!
   "Starts a new worker pool for processing compute-bound requests.
   Opts:
-  - :num-workers (default: cores - 1, or 1)
-  - :queue-size (default: 10)
+  - :num-workers (default: cores - 1, or 1). Must be a positive integer.
+  - :queue-size (default: 10). Must be a non-negative integer. If 0,
+    requests are only accepted if a worker is immediately available.
 
   Returns a pool object (a map) which can be passed to `wrap-compute-bound`
   or `stop-pool!`."
@@ -40,7 +41,11 @@
   ([{:keys [num-workers queue-size]
      :or {num-workers (max 1 (dec (.availableProcessors (Runtime/getRuntime))))
           queue-size 10}}]
-   (let [job-chan (a/chan queue-size)
+   (when-not (pos-int? num-workers)
+     (throw (ex-info ":num-workers must be a positive integer" {:num-workers num-workers})))
+   (when-not (nat-int? queue-size)
+     (throw (ex-info ":queue-size must be a non-negative integer" {:queue-size queue-size})))
+   (let [job-chan (if (zero? queue-size) (a/chan) (a/chan queue-size))
          stop-chan (a/chan)
          stats (atom {:processed 0
                       :rejections 0
