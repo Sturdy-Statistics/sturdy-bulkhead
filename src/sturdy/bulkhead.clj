@@ -63,8 +63,12 @@
   "Stops the worker pool."
   [pool]
   (let [{:keys [job-chan stop-chan]} pool]
-    (a/close! stop-chan)
     (a/close! job-chan)
+    (loop []
+      (when-let [job (a/poll! job-chan)]
+        (a/close! (:promise-chan job))
+        (recur)))
+    (a/close! stop-chan)
     pool))
 
 (defn default-reject-handler [request]
@@ -108,9 +112,13 @@
              ;; - if timeout and worker has started, signals to drop the result
              (a/close! promise-chan)
              (if (= port promise-chan)
-               (if (contains? val :error)
-                 (throw (:error val))
-                 (:result val))
+               (if (nil? val)
+                 (do
+                   (swap! stats update :rejections inc)
+                   (on-reject request))
+                 (if (contains? val :error)
+                   (throw (:error val))
+                   (:result val)))
                (do
                  (swap! stats update :timeouts inc)
                  (on-timeout request))))
