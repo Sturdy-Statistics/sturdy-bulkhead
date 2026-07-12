@@ -95,7 +95,10 @@ Because `wrap-compute-bound` is synchronous middleware, it blocks the incoming J
 - **Worker Count (`num-workers`)**: This should be less than your total CPU cores.  This ensures the OS and web server always have dedicated resources to process network I/O, health checks, and fast endpoints without CPU starvation.
 - **Queue Size (`queue-size`)**: Determine how many requests you are willing to hold in memory during a traffic burst.  If the queue is full, the middleware immediately returns a `503 Service Unavailable`, freeing the jetty thread. Note that you may configure `:queue-size 0`, which means requests will only be accepted if a worker is immediately available for direct handoff; otherwise they are rejected.
 - **Jetty Max Threads**: Ring-Jetty defaults to a maximum of 200 threads.  If you set `num-workers = 30` and `queue-size = 250`, all of jetty's threads could be sleeping on responses from bulkhead.  This would render the server unresponsive until the queue drains.
-- **Timeouts and Capacity**: When a request times out (via `:timeout-ms`), the caller immediately receives a `504 Gateway Timeout`. However, if the worker pool has already begun executing your handler, that handler will continue running to completion in the background, occupying a worker thread until it finishes. Timeouts only free the incoming web server thread, they do not interrupt or cancel the underlying worker pool task.
+- **Timeouts and Capacity**: When a request times out (via `:timeout-ms`), the caller immediately receives a `504 Gateway Timeout`.
+  However, if the worker pool has already begun executing your handler, that handler will continue running to completion in the background, occupying a worker thread until it finishes.
+  Timeouts only free the incoming web server thread; they do not interrupt or cancel the underlying worker pool task.
+  A timed-out handler may therefore outlive server shutdown.
 
 ## Development & Testing
 

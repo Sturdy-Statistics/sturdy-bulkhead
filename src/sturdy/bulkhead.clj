@@ -72,6 +72,7 @@
   [pool]
   (let [{:keys [job-chan stop-chan]} pool]
     (a/close! job-chan)
+    ;; A worker may take a job while this loop drains; that job either runs normally or is skipped by the promise-channel guard if its caller is no longer waiting.
     (loop []
       (when-let [job (a/poll! job-chan)]
         (a/close! (:promise-chan job))

@@ -10,8 +10,7 @@
 
   :coverage
   {:extra-paths ["test"]
-   :extra-deps  {cloverage/cloverage {:mvn/version "1.2.4"}
-                 ring/ring-mock      {:mvn/version "0.6.2"}}
+   :extra-deps  {cloverage/cloverage {:mvn/version "1.2.4"}}
    :exec-fn     cloverage.coverage/run-project
    :exec-args   {:src-ns-path  ["src"]
                  :test-ns-path ["test"]}}
