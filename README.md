@@ -76,6 +76,10 @@ Stopping a pool closes it permanently; a stopped pool is not intended to be rest
 Queued and subsequent requests receive the same `503 Service Unavailable` response as requests rejected because the queue is full, and all of these cases increment the `:rejections` statistic.
 The pool deliberately does not track separate lifecycle state or distinguish shutdown from saturation.
 If that distinction matters for operational metrics, stop accepting traffic before calling `stop-pool!` and exclude the shutdown window from saturation alerts.
+`stop-pool!` returns after closing the pool and releasing queued callers; it does not wait for active handlers to finish.
+Active handlers continue running until they finish and may keep their worker threads alive after `stop-pool!` returns.
+`stop-pool!` does not interrupt or cancel handlers because arbitrary synchronous handler code cannot be safely stopped by the pool.
+Applications that require stronger shutdown guarantees must use cooperative cancellation in their handlers or manage cancellation at a higher level.
 
 ## Tuning & Production Considerations
 
