@@ -15,6 +15,22 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":queue-size must be a non-negative integer"
                           (bulkhead/start-pool! {:queue-size -1})))))
 
+(deftest public-api-test
+  (testing "worker-loop is an implementation detail"
+    (is (nil? (get (ns-publics 'sturdy.bulkhead) 'worker-loop))))
+
+  (testing "pool-stats returns a statistics snapshot"
+    (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})]
+      (try
+        (is (= {:processed 0
+                :errors 0
+                :rejections 0
+                :timeouts 0
+                :phantom-pops 0}
+               (bulkhead/pool-stats pool)))
+        (finally
+          (bulkhead/stop-pool! pool))))))
+
 (deftest invalid-middleware-options-test
   (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
         handler-called? (atom false)

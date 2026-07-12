@@ -83,6 +83,7 @@ Applications that require stronger shutdown guarantees must use cooperative canc
 
 The pool's `:processed` statistic counts every handler that completes, including handlers that throw.
 The `:errors` statistic counts handler attempts that throw, including failures that occur after the caller has timed out.
+Use `(bulkhead/pool-stats my-pool)` to read a snapshot of the pool's current statistics without depending on its internal representation.
 
 ## Tuning & Production Considerations
 

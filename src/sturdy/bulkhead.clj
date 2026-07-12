@@ -3,7 +3,7 @@
    [clojure.core.async :as a]
    [taoensso.truss :refer [have!]]))
 
-(defn worker-loop [job-chan pool-stats stop-chan]
+(defn- worker-loop [job-chan pool-stats stop-chan]
   (a/thread
     (loop []
       (let [[job port] (a/alts!! [job-chan stop-chan])]
@@ -61,6 +61,11 @@
       :stop-chan stop-chan
       :stats stats
       :workers workers})))
+
+(defn pool-stats
+  "Returns a snapshot of the pool's current statistics."
+  [pool]
+  @(:stats pool))
 
 (defn stop-pool!
   "Stops the worker pool."
