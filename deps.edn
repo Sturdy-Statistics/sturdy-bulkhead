@@ -1,6 +1,7 @@
 {:paths ["src"]
  :deps  {org.clojure/clojure    {:mvn/version "1.12.0"}
-         org.clojure/core.async {:mvn/version "1.9.865"}}
+         org.clojure/core.async {:mvn/version "1.9.865"}
+         com.taoensso/truss     {:mvn/version "2.3.0"}}
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps  {io.github.cognitect-labs/test-runner

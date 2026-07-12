@@ -15,6 +15,31 @@
     (is (thrown-with-msg? clojure.lang.ExceptionInfo #":queue-size must be a non-negative integer"
                           (bulkhead/start-pool! {:queue-size -1})))))
 
+(deftest invalid-middleware-options-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        handler-called? (atom false)
+        handler (fn [_request]
+                  (reset! handler-called? true)
+                  {:status 200})]
+    (try
+      (testing "timeout-ms validation happens when middleware is constructed"
+        (doseq [timeout-ms [nil -1 1.5 "100"]]
+          (is (thrown?
+               clojure.lang.ExceptionInfo
+               (bulkhead/wrap-compute-bound handler pool {:timeout-ms timeout-ms}))))
+        (is (false? @handler-called?)))
+
+      (testing "callback validation happens when middleware is constructed"
+        (doseq [[option value] [[:on-reject nil]
+                                [:on-reject "not-callable"]
+                                [:on-timeout nil]
+                                [:on-timeout "not-callable"]]]
+          (is (thrown?
+               clojure.lang.ExceptionInfo
+               (bulkhead/wrap-compute-bound handler pool {option value})))))
+      (finally
+        (bulkhead/stop-pool! pool)))))
+
 (deftest successful-request-test
   (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
         handler (fn [_req] {:status 200 :body "OK"})

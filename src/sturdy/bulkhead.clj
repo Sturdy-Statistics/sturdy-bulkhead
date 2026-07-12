@@ -1,6 +1,7 @@
 (ns sturdy.bulkhead
   (:require
-   [clojure.core.async :as a]))
+   [clojure.core.async :as a]
+   [taoensso.truss :refer [have!]]))
 
 (defn worker-loop [job-chan pool-stats stop-chan]
   (a/thread
@@ -90,7 +91,7 @@
   by queueing them to a worker pool.
 
   Accepts a `pool` created by `start-pool!` and `opts`:
-  - :timeout-ms (default: 30000)
+  - :timeout-ms (default: 30000). Must be a non-negative integer.
   - :on-reject (fn [request] -> response, called when queue is full)
   - :on-timeout (fn [request] -> response, called when queue timeout happens)"
   ([handler pool]
@@ -99,6 +100,9 @@
                   :or {timeout-ms 30000
                        on-reject default-reject-handler
                        on-timeout default-timeout-handler}}]
+   (have! nat-int? timeout-ms)
+   (have! ifn? on-reject)
+   (have! ifn? on-timeout)
    (let [job-chan (:job-chan pool)
          stats (:stats pool)]
      (fn [request]
