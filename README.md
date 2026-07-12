@@ -66,11 +66,16 @@ If you use `reitit`, you can attach the middleware to specific routes using its 
 
 ### 3. Stop the Pool
 
-When shutting down your application, clean up the resources:
+Call `stop-pool!` as part of application shutdown, after the server has stopped accepting new traffic:
 
 ```clojure
 (bulkhead/stop-pool! my-pool)
 ```
+
+Stopping a pool closes it permanently; a stopped pool is not intended to be restarted or reused.
+Queued and subsequent requests receive the same `503 Service Unavailable` response as requests rejected because the queue is full, and all of these cases increment the `:rejections` statistic.
+The pool deliberately does not track separate lifecycle state or distinguish shutdown from saturation.
+If that distinction matters for operational metrics, stop accepting traffic before calling `stop-pool!` and exclude the shutdown window from saturation alerts.
 
 ## Tuning & Production Considerations
 
