@@ -134,6 +134,7 @@
         handler (fn [_req] (throw (ex-info "Boom" {:foo "bar"})))
         wrapped (bulkhead/wrap-compute-bound handler pool)]
     (is (thrown-with-msg? Exception #"Boom" (wrapped {:request-method :get})))
+    (is (= 1 (:errors @(:stats pool))))
     (bulkhead/stop-pool! pool)))
 
 (deftest errors-thrown-test
@@ -141,9 +142,37 @@
         handler (fn [_req] (throw (AssertionError. "Severe Error")))
         wrapped (bulkhead/wrap-compute-bound handler pool)]
     (is (thrown-with-msg? AssertionError #"Severe Error" (wrapped {:request-method :get})))
+    (is (= 1 (:errors @(:stats pool))))
     (let [handler-2 (fn [_req] {:status 200 :body "OK"})
           wrapped-2 (bulkhead/wrap-compute-bound handler-2 pool)]
       (is (= {:status 200 :body "OK"} (wrapped-2 {:request-method :get}))))
+    (bulkhead/stop-pool! pool)))
+
+(deftest error-after-timeout-counted-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        release-handler (promise)
+        handler-started (promise)
+        failing-handler (fn [_request]
+                          (deliver handler-started true)
+                          @release-handler
+                          (throw (ex-info "Late failure" {})))
+        wrapped-failing-handler (bulkhead/wrap-compute-bound
+                                 failing-handler
+                                 pool
+                                 {:timeout-ms 10})
+        response (future (wrapped-failing-handler {}))]
+    @handler-started
+    (is (= 504 (:status @response)))
+    (deliver release-handler true)
+
+    ;; A subsequent request on the same single-worker pool cannot complete until the failing handler has been caught and its statistics have been updated.
+    (let [wrapped-successful-handler (bulkhead/wrap-compute-bound
+                                      (fn [_request] {:status 200})
+                                      pool)]
+      (is (= 200 (:status (wrapped-successful-handler {})))))
+
+    (is (= 1 (:errors @(:stats pool))))
+    (is (= 2 (:processed @(:stats pool))))
     (bulkhead/stop-pool! pool)))
 
 (deftest phantom-pop-test

@@ -12,7 +12,7 @@ It prevents CPU starvation by offloading work to dedicated worker pools using `c
 - **Fast Failures**: Rejects requests with a 503 Service Unavailable when the queue is saturated.
 - **Timeouts**: Configurable timeouts to send a 504 Gateway Timeout.
 - **Multiple Pools**: Create multiple pools to bound different resources independently within the same application.
-- **Observability**: Tracks basic statistics like processed tasks, rejections, and timeouts.
+- **Observability**: Tracks basic statistics for completed tasks, handler errors, rejections, and timeouts.
 
 ## Installation
 
@@ -80,6 +80,9 @@ If that distinction matters for operational metrics, stop accepting traffic befo
 Active handlers continue running until they finish and may keep their worker threads alive after `stop-pool!` returns.
 `stop-pool!` does not interrupt or cancel handlers because arbitrary synchronous handler code cannot be safely stopped by the pool.
 Applications that require stronger shutdown guarantees must use cooperative cancellation in their handlers or manage cancellation at a higher level.
+
+The pool's `:processed` statistic counts every handler that completes, including handlers that throw.
+The `:errors` statistic counts handler attempts that throw, including failures that occur after the caller has timed out.
 
 ## Tuning & Production Considerations
 

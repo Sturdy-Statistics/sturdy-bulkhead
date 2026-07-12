@@ -22,6 +22,7 @@
                 (let [result (try
                                {:result (thunk)}
                                (catch Throwable e
+                                 (swap! pool-stats update :errors inc)
                                  {:error e}))]
                   ;; job complete -> send result
                   ;; NB if channel closed while running, put simply drops the value
@@ -49,6 +50,7 @@
    (let [job-chan (if (zero? queue-size) (a/chan) (a/chan queue-size))
          stop-chan (a/chan)
          stats (atom {:processed 0
+                      :errors 0
                       :rejections 0
                       :timeouts 0
                       :phantom-pops 0})
