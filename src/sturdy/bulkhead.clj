@@ -3,15 +3,15 @@
    [clojure.core.async :as a]
    [taoensso.truss :refer [have!]]))
 
-(defn- cancellation-token []
+(defn- make-cancellation-context []
   (let [callback (atom nil)
         cancelled? (atom false)
         invoked? (atom false)
         invoke! #(when (and @cancelled? @callback
                             (compare-and-set! invoked? false true))
                    (try (@callback) (catch Throwable _)))]
-    {:token {:register! (fn [f] (reset! callback f) (invoke!))
-             :cancelled? #(deref cancelled?)}
+    {:context {:register! (fn [f] (reset! callback f) (invoke!))
+               :cancelled? #(deref cancelled?)}
      :cancel! #(do (reset! cancelled? true) (invoke!))}))
 
 (defn- worker-loop [job-chan pool-stats stop-chan]
@@ -158,9 +158,9 @@
              (on-reject request))))))))
 
 (defn wrap-cancellable-compute-bound
-  "Like `wrap-compute-bound`, but calls the handler with a cancellation token.
+  "Like `wrap-compute-bound`, but calls the handler with a cancellation context.
 
-  The token's `:register!` function accepts an optional cancellation callback.
+  The context's `:register!` function accepts an optional cancellation callback.
   If the total `:timeout-ms` expires while the handler is running, a registered
   callback is invoked once. If no callback is registered, timeout behavior is
   unchanged."
@@ -177,9 +177,9 @@
          stats (:stats pool)]
      (fn [request]
        (let [promise-chan (a/promise-chan)
-             cancellation (cancellation-token)
+             cancellation (make-cancellation-context)
              state (atom :queued)
-             thunk #(handler request (:token cancellation))]
+             thunk #(handler request (:context cancellation))]
          (if (a/offer! job-chan {:thunk thunk
                                  :promise-chan promise-chan
                                  :state state})
