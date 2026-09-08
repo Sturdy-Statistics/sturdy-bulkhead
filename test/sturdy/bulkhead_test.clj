@@ -215,3 +215,61 @@
       (is (= 1 (:phantom-pops @(:stats pool))))
       (is (= 1 (:processed @(:stats pool))))
       (bulkhead/stop-pool! pool))))
+
+(deftest cancellable-queued-timeout-never-runs-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 2})
+        release (promise)
+        started (promise)
+        queued-ran? (atom false)
+        handler (fn [request _]
+                  (if (= :busy (:kind request))
+                    (do (deliver started true) @release {:status 200})
+                    (do (reset! queued-ran? true) {:status 200})))
+        busy-wrapper (bulkhead/wrap-cancellable-compute-bound
+                      handler pool {:timeout-ms 1000})
+        queued-wrapper (bulkhead/wrap-cancellable-compute-bound
+                        handler pool {:timeout-ms 25})
+        busy (future (busy-wrapper {:kind :busy}))]
+    @started
+    (is (= 504 (:status (queued-wrapper {:kind :queued}))))
+    (deliver release true)
+    @busy
+    (Thread/sleep 20)
+    (is (false? @queued-ran?))
+    (bulkhead/stop-pool! pool)))
+
+(deftest running-timeout-cancels-once-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        started (promise)
+        cancelled (promise)
+        cancel-count (atom 0)
+        wrapped (bulkhead/wrap-cancellable-compute-bound
+                 (fn [_ {:keys [register!]}]
+                   (register! #(do (swap! cancel-count inc)
+                                   (deliver cancelled true)))
+                   (deliver started true)
+                   @cancelled
+                   {:status 200})
+                 pool
+                 {:timeout-ms 10})
+        result (future (wrapped {:request-id "cancel"}))]
+    @started
+    (is (= 504 (:status @result)))
+    (is (realized? cancelled))
+    (Thread/sleep 20)
+    (is (= 1 @cancel-count))
+    (bulkhead/stop-pool! pool)))
+
+(deftest nil-cancellation-callback-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        release (promise)
+        wrapped (bulkhead/wrap-cancellable-compute-bound
+                 (fn [_ {:keys [register!]}]
+                   (register! nil)
+                   @release
+                   {:status 200})
+                 pool
+                 {:timeout-ms 10})]
+    (is (= 504 (:status (wrapped {}))))
+    (deliver release true)
+    (bulkhead/stop-pool! pool)))

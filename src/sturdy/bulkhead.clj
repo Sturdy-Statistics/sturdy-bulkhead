@@ -3,19 +3,36 @@
    [clojure.core.async :as a]
    [taoensso.truss :refer [have!]]))
 
+(defn- cancellation-token []
+  (let [callback (atom nil)
+        cancelled? (atom false)
+        invoked? (atom false)
+        invoke! #(when (and @cancelled? @callback
+                            (compare-and-set! invoked? false true))
+                   (try (@callback) (catch Throwable _)))]
+    {:token {:register! (fn [f] (reset! callback f) (invoke!))
+             :cancelled? #(deref cancelled?)}
+     :cancel! #(do (reset! cancelled? true) (invoke!))}))
+
 (defn- worker-loop [job-chan pool-stats stop-chan]
   (a/thread
     (loop []
       (let [[job port] (a/alts!! [job-chan stop-chan])]
         (when (= port job-chan)
           (when job
-            (let [{:keys [thunk promise-chan]} job
+            (let [{:keys [thunk promise-chan state]} job
                   ;; non-blocking read from promise-chan
                   ;; - channel closed: receive nil from promise-chan
                   ;; - channel open but empty: receive :continue as default
                   ;; (channel should never be non-empty here)
-                  [_ p] (a/alts!! [promise-chan] :default :continue)]
-              (if (= p promise-chan)
+                  [_ p] (a/alts!! [promise-chan] :default :continue)
+                  run? (if state
+                         (locking state
+                           (when (and (not= p promise-chan) (= :queued @state))
+                             (reset! state :running)
+                             true))
+                         (not= p promise-chan))]
+              (if-not run?
                 ;; channel closed -> skip job
                 (swap! pool-stats update :phantom-pops inc)
                 ;; channel open -> run job
@@ -24,6 +41,8 @@
                                (catch Throwable e
                                  (swap! pool-stats update :errors inc)
                                  {:error e}))]
+                  (when state
+                    (locking state (reset! state :completed)))
                   ;; job complete -> send result
                   ;; NB if channel closed while running, put simply drops the value
                   (a/>!! promise-chan result)
@@ -133,6 +152,55 @@
                    (:result val)))
                (do
                  (swap! stats update :timeouts inc)
+                 (on-timeout request))))
+           (do
+             (swap! stats update :rejections inc)
+             (on-reject request))))))))
+
+(defn wrap-cancellable-compute-bound
+  "Like `wrap-compute-bound`, but calls the handler with a cancellation token.
+
+  The token's `:register!` function accepts an optional cancellation callback.
+  If the total `:timeout-ms` expires while the handler is running, a registered
+  callback is invoked once. If no callback is registered, timeout behavior is
+  unchanged."
+  ([handler pool]
+   (wrap-cancellable-compute-bound handler pool {}))
+  ([handler pool {:keys [timeout-ms on-reject on-timeout]
+                  :or {timeout-ms 30000
+                       on-reject default-reject-handler
+                       on-timeout default-timeout-handler}}]
+   (have! nat-int? timeout-ms)
+   (have! ifn? on-reject)
+   (have! ifn? on-timeout)
+   (let [job-chan (:job-chan pool)
+         stats (:stats pool)]
+     (fn [request]
+       (let [promise-chan (a/promise-chan)
+             cancellation (cancellation-token)
+             state (atom :queued)
+             thunk #(handler request (:token cancellation))]
+         (if (a/offer! job-chan {:thunk thunk
+                                 :promise-chan promise-chan
+                                 :state state})
+           (let [[val port] (a/alts!! [promise-chan (a/timeout timeout-ms)])]
+             (a/close! promise-chan)
+             (if (= port promise-chan)
+               (if (nil? val)
+                 (do
+                   (swap! stats update :rejections inc)
+                   (on-reject request))
+                 (if (contains? val :error)
+                   (throw (:error val))
+                   (:result val)))
+               (do
+                 (swap! stats update :timeouts inc)
+                 (let [running? (locking state
+                                  (case @state
+                                    :queued (do (reset! state :timed-out) false)
+                                    :running (do (reset! state :timed-out) true)
+                                    false))]
+                   (when running? ((:cancel! cancellation))))
                  (on-timeout request))))
            (do
              (swap! stats update :rejections inc)
