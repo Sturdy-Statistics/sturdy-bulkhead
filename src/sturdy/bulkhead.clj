@@ -5,12 +5,19 @@
 
 (defn- make-cancellation-context []
   (let [callback (atom nil)
+        registered? (atom false)
         cancelled? (atom false)
         invoked? (atom false)
-        invoke! #(when (and @cancelled? @callback
-                            (compare-and-set! invoked? false true))
-                   (try (@callback) (catch Throwable _)))]
-    {:context {:register! (fn [f] (reset! callback f) (invoke!))
+        invoke! #(let [f @callback]
+                   (when (and @cancelled?
+                              f
+                              (compare-and-set! invoked? false true))
+                     (try (f) (catch Throwable _))))]
+    {:context {:register! (fn [f]
+                            (when-not (compare-and-set! registered? false true)
+                              (throw (ex-info "`:register!` may only be called once" {})))
+                            (reset! callback f)
+                            (invoke!))
                :cancelled? #(deref cancelled?)}
      :cancel! #(do (reset! cancelled? true) (invoke!))}))
 
@@ -160,7 +167,8 @@
 (defn wrap-cancellable-compute-bound
   "Like `wrap-compute-bound`, but calls the handler with a cancellation context.
 
-  The context's `:register!` function accepts an optional cancellation callback.
+  The context's `:register!` function may be called at most once with an optional
+  cancellation callback (`nil` means no callback).
   If the total `:timeout-ms` expires while the handler is running, a registered
   callback is invoked once. If no callback is registered, timeout behavior is
   unchanged."
