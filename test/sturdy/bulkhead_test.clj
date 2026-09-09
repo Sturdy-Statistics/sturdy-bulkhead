@@ -273,3 +273,18 @@
     (is (= 504 (:status (wrapped {}))))
     (deliver release true)
     (bulkhead/stop-pool! pool)))
+
+(deftest cancellation-callback-registration-is-one-shot-test
+  (let [pool (bulkhead/start-pool! {:num-workers 1 :queue-size 1})
+        wrapped (bulkhead/wrap-cancellable-compute-bound
+                 (fn [_ {:keys [register!]}]
+                   (register! nil)
+                   (register! nil)
+                   {:status 200})
+                 pool)]
+    (try
+      (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                            #"`:register!` may only be called once"
+                            (wrapped {})))
+      (finally
+        (bulkhead/stop-pool! pool)))))
